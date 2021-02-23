@@ -4,12 +4,9 @@ from utils import database
 import buoy_scraper
 import pandas as pd
 
-#write method to append data to POSTGRE SQL
-#Either write method to remove duplicate rows based on date / hour, or to automatically scrape every hour
+from timedate import Timedate
 
 
-
-#write method to pull recent data, 1 day or 2 days
 
 def print_data(swell_data):
     print(swell_data)
@@ -53,7 +50,7 @@ def forecast_today(swell_data):
     dominant_wave_period = swell_data['DPDsec']
     average_wave_period = swell_data['APDsec']
     wave_direction = swell_data['MWD'][0:9]
-    time = swell_data['TIMEpst'] # will need to change this column name when the SQL connection is completed
+    time = swell_data['Time']
 
     plot_data(wave_height, dominant_wave_period, average_wave_period, time)
     # five hour averages
@@ -74,7 +71,7 @@ def forecast_today(swell_data):
 
 def swell_categorisation(wave_height, wave_period):
     # my assumptions that a period over 15 seconds assumes waves traveled a long distance
-    # my assumptions that a 7 ft read on buoy is difference between big and small
+    # my assumptions that a 7 ft read on buoy is difference between large and small
     PERIOD = 15
     HEIGHT = 7
 
@@ -112,68 +109,122 @@ def raw_day_trends(wave_height, wave_period, avg_wave_period):
     return
 
 
-def percent_trending(wave_height, wave_period, avg_wave_period):
+def percent_trending(wave_height, wave_period):
 
     percent_change_height = []
+    percent_change_period = []
 
     for i in range(0,len(wave_height) - 1):
         delta = ((wave_height[i] - wave_height[i + 1]) / wave_height[i + 1]) * 100
         percent_change_height.append(delta)
 
-        percent_change_height = list(np.around(np.array(percent_change_height),2))
-        percent_change_height.reverse()
-    # I NEED TO PRINT THIS IN A PRETTY WAY
-    print(f'5 Hour {percent_change_height[0]}%, 10 Hour %{percent_change_height[1]}%, 15 Hour {percent_change_height[2]}%')
+        percent_change_height = list(np.around(np.array(percent_change_height), 2))
+    percent_change_height.reverse()
+
+    print(f'Wave Height - 5 hour percentage change (0-5 hours): {percent_change_height[0]}%, (5-10 hours):{percent_change_height[1]}%, (5-10 hours): {percent_change_height[2]}%')
+
+    for i in range(0, len(wave_period) - 1):
+        delta_per = ((wave_period[i] - wave_period[i + 1]) / wave_period[i + 1]) * 100
+        percent_change_period.append(delta_per)
+        percent_change_period = list(np.around(np.array(percent_change_period), 2))
+    percent_change_period.reverse()
+
+    print(f'Wave Period - 5 hour percentage change (0-5 hours): {percent_change_period[0]}%, (5-10 hours): {percent_change_period[1]}%, (5-10 hours): {percent_change_period[2]}%')
     return
 
 
-def wave_power_calculation(wave_height, wave_period, other_wave_period):
-    # will return a non-dimension unit
+def wave_power_calculation(wave_height, wave_period): # ADD column? pplot this...?
     # Dominant wave heigth, dominant wave period, other_wave_period is the average period of all waves; assume this is general swell energy for non-dominant waves
-    density_salt_water = 1020 # kilogram / m^3
-    power = wave_height ^ 5
-    buoy_ocean_depth = 65 # feet
+    wave_height = list(wave_height)
+    wave_period = list(wave_period)
 
-    dom_wave_period = wave_period
-    non_dominant_wave_period = other_wave_period
+    power = wave_height[0] ** 2
+    dom_wave_period = wave_period[0]
+    wave_calc = power * dom_wave_period #h^2mo * T
+    pascal = .5 # kW / meter cubed * second
+    wave_power = pascal * wave_calc
+    print(f'The most recent wave power calculation is {round(wave_power,2)}')
+    return wave_power
 
 
-def menu():
-    user_input = input('To run the program press the key "yes": ')
+# Average wave period method that can describe the extra wave energy in the water, my hunch is potentially a predictor to combo NW , SW swells
+def other_wave_period_assessment(avg_wave_period):
+    avg_period_delta = []
+
+    for i in range(0,len(avg_wave_period) - 1):
+        delta = ((avg_wave_period[i] - avg_wave_period[i + 1]) / avg_wave_period[i + 1]) * 100
+        avg_period_delta.append(delta)
+
+        avg_period_delta = list(np.around(np.array(avg_period_delta), 2))
+    avg_period_delta.reverse()
+
+    return avg_period_delta
+
+
+
+def menu(): # update menu for daily forecast vs Historical swells.
+    user_input = input('To run the program press the any key: ')
+
     while user_input != 'q':
-        user_input = input(
-"""
-To refresh data press 'r'
-To view todays data press 'v'
-to view daily trends press 't'
-To quit program press 'q'
-""")
+        user_input = input("""
+To get new data enter 'r': 
+To see daily trends select 'd': 
+To see historical data select 'h': 
+To quit program press 'q': 
+""").lower()
+
         if user_input == 'r':
             # scrape data from NOAA
             df = buoy_scraper.scrape_buoy_data()
+            # fix columns
+            df = buoy_scraper.convert_time_columns(df, Timedate.AMPM)
             # write data to CSV
             buoy_scraper.write_wave_data(df)
-            # check if table exists
+            # check if table exists in SQL lite
             database.create_buoy_data()
             # write CSV to SQL
             database.add_buoy_data()
-        if user_input == 'v':
-            # this will be updated to pull data from SQL
-            swell_data = buoy_scraper.read_buoy_csv()
-            wave_height, wave_period, avg_period, time = forecast_today(swell_data)
-            print(swell_categorisation(wave_height, wave_period))
-        if user_input =='t':
-            # this will be updated to pull data from SQL
-            swell_data = buoy_scraper.read_buoy_csv()
-            wave_height, wave_period, avg_period, time = forecast_today(swell_data)
-            raw_day_trends(wave_height, wave_period, avg_period)
-            percent_trending(wave_height, wave_period, avg_period)
+            # update SQL database to remove duplicates
+            database.add_buoy_data()
 
-            plt.show()
+        if user_input == 'd':
+            user_input = input(
+"""
+To view today's data press 'v': 
+to view daily trends press 't': 
+To quit program press 'q': 
+""").lower()
 
+            if user_input == 'v':
+                swell_data = buoy_scraper.read_buoy_csv() # update to swell_data pulled from SQL
+                print_data(swell_data)
+                wave_height, wave_period, avg_period, time = forecast_today(swell_data)
+                print(swell_categorisation(wave_height, wave_period))
+                wave_power_calculation(wave_height, wave_period)
+
+            if user_input =='t':
+                swell_data = buoy_scraper.read_buoy_csv() # update to swell_data pulled from SQL
+                wave_height, wave_period, avg_period, time = forecast_today(swell_data)
+                raw_day_trends(wave_height, wave_period, avg_period)
+                percent_trending(wave_height, wave_period)
+                plt.show()
+
+        if user_input == 'h':
+            user_input = input(
+            """
+to view two day trend enter 't': 
+To view all historical data enter 'n': 
+            """
+            )
+            if user_input == 't':
+                # note if program is not manually refreshed every 23.5 hours data will be innacurate
+                two_days = database.get_two_days()
+
+                print(two_days)
+
+            elif user_input == 'n':
+                historical_data = database.get_all_historical_data()
+                print(historical_data)
 
 
 menu()
-
-
-
