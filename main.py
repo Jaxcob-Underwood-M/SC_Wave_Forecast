@@ -5,7 +5,7 @@ import buoy_scraper
 import pandas as pd
 
 from timedate import Timedate
-
+import historical_calcs
 
 
 def print_data(swell_data):
@@ -184,8 +184,6 @@ To quit program press 'q':
             database.create_buoy_data()
             # write CSV to SQL
             database.add_buoy_data()
-            # update SQL database to remove duplicates
-            database.add_buoy_data()
 
         if user_input == 'd':
             user_input = input(
@@ -211,20 +209,18 @@ To quit program press 'q':
 
         if user_input == 'h':
             user_input = input(
-            """
+"""
 to view two day trend enter 't': 
 To view all historical data enter 'n': 
-            """
-            )
+""").lower()
             if user_input == 't':
                 # note if program is not manually refreshed every 23.5 hours data will be innacurate
-                two_days = database.get_two_days()
+                #historical_calcs.plot_two_day_wavepower()
+                historical_calcs.plot_two_day_trend()
 
-                print(two_days)
 
             elif user_input == 'n':
-                historical_data = database.get_all_historical_data()
-                print(historical_data)
+                pass # create plot for all
 
 
 menu()
