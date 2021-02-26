@@ -34,8 +34,8 @@ def get_all_historical_data():
 def get_two_days():
     with DatabaseConnection('swell.db') as connection:
         cursor = connection.cursor()
-        cursor.execute('SELECT * FROM wave_data ORDER BY Time')
-        swell_data = cursor.fetchmany(96)
+        cursor.execute('SELECT * FROM wave_data ORDER BY Time DESC Limit 96')
+        swell_data = cursor.fetchall()
 
     swell_data = pd.DataFrame(swell_data, columns =['MM', 'DD', 'TIMEpst', 'WVHTft', 'DPDsec', 'APDsec', 'MWD', 'Time'])
 
